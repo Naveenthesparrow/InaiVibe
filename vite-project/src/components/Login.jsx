@@ -1,38 +1,38 @@
-import React, { useState, useEffect } from 'react';
-import axios from 'axios';
-import { Link } from 'react-router-dom';
-import Logo from '../assets/logo.png'
-import Music2 from '../assets/Music.png'
-import Music3 from '../assets/Music3.svg'
-import S1 from '../assets/S1.svg'
-import GoogleLogin from './GoogleLogin';
-const backend_url = import.meta.env.VITE_BACKEND_URL
+import React, { useState, useEffect } from "react";
+import axios from "axios";
+import { Link } from "react-router-dom";
+import Logo from "../assets/logo.png";
+import Music2 from "../assets/Music.png";
+import Music3 from "../assets/Music3.svg";
+import S1 from "../assets/S1.svg";
+import GoogleLogin from "./GoogleLogin";
+const backend_url = import.meta.env.VITE_BACKEND_URL;
 
 function Login({ setUser }) {
   const [formData, setFormData] = useState({
-    email: '',
-    password: ''
+    email: "",
+    password: "",
   });
-  const [error, setError] = useState('');
+  const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    const storedUser = localStorage.getItem('user');
+    const storedUser = localStorage.getItem("user");
     if (storedUser) {
       try {
         const parsedUser = JSON.parse(storedUser);
         axios
           .get(`${backend_url}/api/current-user`, {
-            headers: { Authorization: parsedUser.token }
+            headers: { Authorization: parsedUser.token },
           })
           .then(() => {
             setUser(parsedUser);
           })
           .catch(() => {
-            localStorage.removeItem('user');
+            localStorage.removeItem("user");
           });
       } catch (e) {
-        localStorage.removeItem('user');
+        localStorage.removeItem("user");
       }
     }
   }, [setUser]);
@@ -41,36 +41,39 @@ function Login({ setUser }) {
     const { name, value } = e.target;
     setFormData((prev) => ({
       ...prev,
-      [name]: value
+      [name]: value,
     }));
   };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    setError('');
+    setError("");
     setLoading(true);
 
     const { email, password } = formData;
 
     if (!email || !password) {
-      setError('Email and password are required');
+      setError("Email and password are required");
       setLoading(false);
       return;
     }
 
     try {
-      const response = await axios.post(`${backend_url}/auth/login`, { email, password });
+      const response = await axios.post(`${backend_url}/auth/login`, {
+        email,
+        password,
+      });
       const userData = {
         email: response.data.user.email,
         avatar: response.data.user.avatar,
-        token: response.data.token
+        token: response.data.token,
       };
 
       setUser(userData);
-      localStorage.setItem('user', JSON.stringify(userData));
+      localStorage.setItem("user", JSON.stringify(userData));
     } catch (error) {
-      setError(error.response?.data?.error || 'Login failed');
-      console.error('Login error:', error);
+      setError(error.response?.data?.error || "Login failed");
+      console.error("Login error:", error);
     } finally {
       setLoading(false);
     }
@@ -82,22 +85,22 @@ function Login({ setUser }) {
       <div className="relative w-full md:w-2/3 lg:w-3/4 order-2 md:order-1">
         <div className="absolute top-0 left-0 w-full h-full z-10">
           {/* Mobile-responsive image positioning */}
-          <img 
-            src={Music3} 
-            className="hidden md:block h-[500px] absolute top-[400px] right-[0px]" 
-            alt="" 
+          <img
+            src={Music3}
+            className="hidden md:block h-[500px] absolute top-[400px] right-[0px]"
+            alt=""
           />
-          <img 
-            src={S1} 
-            className="hidden md:block absolute left-[400px] top-[380px] h-[230px] w-auto" 
-            alt="" 
+          <img
+            src={S1}
+            className="hidden md:block absolute left-[400px] top-[380px] h-[230px] w-auto"
+            alt=""
           />
-          <img 
-            src={S1} 
-            className="hidden md:block absolute left-[407px] top-[549px] h-[230px] w-auto scale-x-[-1]" 
-            alt="" 
+          <img
+            src={S1}
+            className="hidden md:block absolute left-[407px] top-[549px] h-[230px] w-auto scale-x-[-1]"
+            alt=""
           />
-          
+
           {/* Title - Responsive Sizing */}
           <div className="absolute left-1/2 -translate-x-1/2 flex justify-center w-full">
             <h1 className="text-4xl md:text-[10rem] font-bold mt-[50px] md:mt-[110px] tracking-tight bg-gradient-to-r from-white via-gray-300 to-gray-400 text-transparent bg-clip-text">
@@ -147,7 +150,9 @@ function Login({ setUser }) {
           <div className="text-center">
             <img src={Logo} alt="Logo" width={90} className="mx-auto mb-3" />
             <h1 className="text-3xl font-semibold">Sign in</h1>
-            <p className="mt-2 text-[1.1rem] text-[#000]">Please enter your credentials</p>
+            <p className="mt-2 text-[1.1rem] text-[#000]">
+              Please enter your credentials
+            </p>
           </div>
 
           <form className="space-y-4" onSubmit={handleSubmit}>
@@ -174,7 +179,9 @@ function Login({ setUser }) {
                   className="w-full border-b border-[#000] pb-1 focus:border-black focus:outline-none transition-colors"
                 />
               </div>
-              <p className="text-sm text-gray-500 hover:text-gray-700 mt-3">Forgot Password?</p>
+              <p className="text-sm text-gray-500 hover:text-gray-700 mt-3">
+                Forgot Password?
+              </p>
             </div>
             <div className="flex justify-center">
               <button
@@ -182,14 +189,14 @@ function Login({ setUser }) {
                 className="w-full md:w-[320px] rounded-full bg-[#000] py-2.5 text-white hover:bg-gray-800 transition-colors"
                 disabled={loading}
               >
-                {loading ? 'Logging in...' : 'Log in'}
+                {loading ? "Logging in..." : "Log in"}
               </button>
             </div>
           </form>
           <GoogleLogin setUser={setUser} />
 
           <p className="text-center text-[1rem] text-sm mt-4 md:mt-0">
-            Don&apos;t have an account?{' '}
+            Don&apos;t have an account?{" "}
             <Link to="/signup" className="text-blue-600 hover:text-blue-500">
               Sign up
             </Link>
