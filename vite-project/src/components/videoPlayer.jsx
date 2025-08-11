@@ -1,13 +1,14 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
   Pause,
+  Play,
   Rewind,
   FastForward,
   SkipBack,
   SkipForward,
 } from "lucide-react";
 
-function YouTubePlayer({ videoId, socket, roomName }) {
+function YouTubePlayer({ videoId, socket, roomName, onVideoEnd }) {
   const [isPlaying, setIsPlaying] = useState(true);
   const [videoTitle, setVideoTitle] = useState("");
   const iframeRef = useRef(null);
@@ -280,23 +281,35 @@ function YouTubePlayer({ videoId, socket, roomName }) {
     };
   }, [socket, roomName, videoId]);
 
-  // Fetch video title
+  // Fetch video title and notify of video change
   useEffect(() => {
     if (videoId) {
       fetch(
         `https://noembed.com/embed?url=https://www.youtube.com/watch?v=${videoId}`
       )
         .then((res) => res.json())
-        .then((data) => setVideoTitle(data.title || "Unknown Video"))
+        .then((data) => {
+          setVideoTitle(data.title || "Unknown Video");
+
+          // Notify other components (like Playlist) about video change
+          if (socket && roomName) {
+            socket.emit("videoChange", {
+              roomName,
+              videoId,
+              title: data.title || "Unknown Video",
+            });
+          }
+        })
         .catch((err) => console.error("Error fetching title:", err));
     }
-  }, [videoId]);
+  }, [videoId, socket, roomName]);
 
-  // Debug function to log postMessage events
+  // Debug message handler and video end detection
   useEffect(() => {
     const debugMessageHandler = (event) => {
       try {
         const data = JSON.parse(event.data);
+
         console.log("🔍 YouTube Iframe Full Debug:", {
           rawEvent: event.data,
           parsedData: data,
@@ -304,6 +317,15 @@ function YouTubePlayer({ videoId, socket, roomName }) {
           currentTime: data.info?.currentTime,
           fullInfo: data.info,
         });
+
+        // Check for video end event
+        if (data.event === "onStateChange" && data.info === 0) {
+          // YouTube player state 0 means ended
+          console.log("🏁 Video ended, triggering next song");
+          if (onVideoEnd) {
+            onVideoEnd();
+          }
+        }
 
         // Additional specific logging for different event types
         if (data.event === "infoDelivery") {
@@ -329,8 +351,7 @@ function YouTubePlayer({ videoId, socket, roomName }) {
     return () => {
       window.removeEventListener("message", debugMessageHandler);
     };
-  }, []);
-
+  }, [onVideoEnd]);
   return (
     <div className="flex flex-col items-center gap-2 sm:gap-4 p-2 sm:p-4 w-full relative">
       <div className="w-[350px] md:w-[600px] lg:w-[700px] flex flex-col relative">
@@ -399,7 +420,7 @@ function YouTubePlayer({ videoId, socket, roomName }) {
               {isPlaying ? (
                 <Pause className="w-4 h-4 sm:w-5 sm:h-5" />
               ) : (
-                <Pause className="w-4 h-4 sm:w-5 sm:h-5" />
+                <Play className="w-4 h-4 sm:w-5 sm:h-5" />
               )}
             </button>
 

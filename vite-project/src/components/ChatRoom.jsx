@@ -1,21 +1,22 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import axios from "axios";
 
 // Import components and assets
 import VideoPlayer from "../components/videoPlayer";
-import SearchBox from "../components/searchBox";
 import RoomMembers from "../components/Members";
+import Playlist from "../components/Playlist";
 import Sent from "../assets/Sent.svg";
 
 // Get backend URL from environment variables
 const backend_url = import.meta.env.VITE_BACKEND_URL;
 
 function ChatRoom({ room, user, socket, leaveRoom, isPlaying }) {
-  // State variables
+  // State variables for CHAT only
   const [message, setMessage] = useState("");
   const [messages, setMessages] = useState([]);
   const [selectedVideoId, setSelectedVideoId] = useState("");
   const [isMembersPanelOpen, setIsMembersPanelOpen] = useState(false);
+  const [playlistFunctions, setPlaylistFunctions] = useState(null);
   const messagesEndRef = useRef(null);
 
   // Effect to handle current video selection
@@ -118,10 +119,45 @@ function ChatRoom({ room, user, socket, leaveRoom, isPlaying }) {
     setIsMembersPanelOpen(!isMembersPanelOpen);
   };
 
-  // Handle video selection
-  const handleVideoSelect = (videoId) => {
+  // Handle video selection - simple video ID setting
+  const handleVideoSelect = (videoData) => {
+    // Handle both string videoId and object with videoId
+    const videoId =
+      typeof videoData === "string" ? videoData : videoData.videoId;
+
+    console.log("Video selected:", videoId);
     setSelectedVideoId(videoId);
+
+    // Emit socket event to sync video across users
+    socket.emit("set current video", {
+      roomName: room.name,
+      videoId: videoId,
+    });
   };
+
+  // Handle playlist ready - store playlist functions
+  const handlePlaylistReady = useCallback((functions) => {
+    console.log("Playlist ready! Functions received:", functions);
+    setPlaylistFunctions(functions);
+  }, []);
+
+  // Handle video end - play next song from playlist
+  const handleVideoEnd = useCallback(() => {
+    console.log("🎵 Video ended, trying to play next song...", {
+      playlistFunctionsAvailable: !!playlistFunctions,
+      playNextSongAvailable: !!(
+        playlistFunctions && playlistFunctions.playNextSong
+      ),
+      playlistFunctions,
+    });
+
+    if (playlistFunctions && playlistFunctions.playNextSong) {
+      console.log("Calling playNextSong...");
+      playlistFunctions.playNextSong();
+    } else {
+      console.log("❌ No playlist functions available or no next song");
+    }
+  }, [playlistFunctions]);
 
   return (
     <div className="h-full flex flex-col">
@@ -144,11 +180,20 @@ function ChatRoom({ room, user, socket, leaveRoom, isPlaying }) {
                 videoId={selectedVideoId}
                 socket={socket}
                 roomName={room.name}
+                onVideoEnd={handleVideoEnd}
               />
             </div>
-            <div className="w-full md:w-1/2">
-              <SearchBox onVideoSelect={handleVideoSelect} />
-            </div>
+          </div>
+
+          {/* Playlist Component - Self-contained */}
+          <div className="w-full p-2 md:p-4">
+            <Playlist
+              socket={socket}
+              roomName={room.name}
+              onVideoSelect={handleVideoSelect}
+              onPlaylistReady={handlePlaylistReady}
+              currentVideoId={selectedVideoId}
+            />
           </div>
 
           <div className="flex flex-col">
