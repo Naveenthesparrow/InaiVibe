@@ -29,10 +29,12 @@ function YouTubePlayer({ videoId, socket, roomName }) {
     }
   };
 
-  // Simplified seek function
-  const seekVideo = (seconds) => {
+  // Fixed seek function - gets current time first, then seeks to absolute position
+  const seekVideo = (offsetSeconds) => {
     return new Promise((resolve, reject) => {
-      console.log(`Attempting to seek ${seconds} seconds`);
+      console.log(
+        `Attempting to seek ${offsetSeconds} seconds relative to current position`
+      );
 
       if (!iframeRef.current) {
         console.error("Iframe ref is not available");
@@ -40,222 +42,177 @@ function YouTubePlayer({ videoId, socket, roomName }) {
         return;
       }
 
-      // Determine the actual seek amount (always 10 seconds)
-      const seekAmount = seconds > 0 ? 10 : -10;
+      // Step 1: Get current time first
+      const getCurrentTimeAndSeek = () => {
+        return new Promise((timeResolve, timeReject) => {
+          let currentTime = 0;
+          let timeoutId;
 
-      // Direct seek method
-      const performDirectSeek = () => {
-        return new Promise((seekResolve, seekReject) => {
-          // Unique identifier for this seek operation
-          const seekId = `seek_${Date.now()}`;
-
-          // Create a message handler specific to this seek
-          const messageHandler = (event) => {
+          // Message handler to get current time
+          const timeHandler = (event) => {
             try {
               const data = JSON.parse(event.data);
 
-              // Check for current time info
               if (
                 data.event === "infoDelivery" &&
                 data.info &&
                 typeof data.info.currentTime === "number"
               ) {
-                const currentTime = data.info.currentTime;
-                const newTime = Math.max(0, currentTime + seekAmount);
+                currentTime = data.info.currentTime;
+                console.log(`Current time retrieved: ${currentTime} seconds`);
 
+                // Remove listener and clear timeout
+                window.removeEventListener("message", timeHandler);
+                if (timeoutId) clearTimeout(timeoutId);
+
+                // Calculate new absolute position
+                const newPosition = Math.max(0, currentTime + offsetSeconds);
                 console.log(
-                  `Current time: ${currentTime}, New time: ${newTime}`
+                  `Seeking to absolute position: ${newPosition} seconds`
                 );
 
-                // Remove listener
-                window.removeEventListener("message", messageHandler);
-
-                seekResolve(newTime);
+                // Step 2: Seek to the calculated absolute position
+                seekToAbsolutePosition(newPosition)
+                  .then(timeResolve)
+                  .catch(timeReject);
               }
             } catch (error) {
-              console.error("Error in seek message handler:", error);
+              console.error("Error parsing time message:", error);
             }
           };
 
-          // Add message listener for current time
-          window.addEventListener("message", messageHandler);
+          // Add listener for current time
+          window.addEventListener("message", timeHandler);
 
-          // Send seek command directly
+          // Request current time from YouTube player
           try {
-            // Multiple seek attempts
-            const seekCommands = [
-              {
+            iframeRef.current.contentWindow.postMessage(
+              JSON.stringify({
                 event: "command",
-                func: "seekTo",
-                args: [seekAmount, true], // true for allowSeekAhead
-              },
-              {
-                event: "command",
-                func: "seekTo",
-                args: [seekAmount],
-              },
-            ];
+                func: "getCurrentTime",
+                args: [],
+              }),
+              "*"
+            );
 
-            seekCommands.forEach((command, index) => {
-              setTimeout(() => {
-                try {
-                  iframeRef.current.contentWindow.postMessage(
-                    JSON.stringify({
-                      ...command,
-                      seekId, // Add unique identifier
-                    }),
-                    "*"
-                  );
-                  console.log(`Seek attempt ${index + 1}:`, command);
-                } catch (seekError) {
-                  console.error(`Seek attempt ${index + 1} failed:`, seekError);
-                }
-              }, index * 100);
-            });
+            // Also request player info as backup
+            iframeRef.current.contentWindow.postMessage(
+              JSON.stringify({
+                event: "command",
+                func: "getVideoData",
+                args: [],
+              }),
+              "*"
+            );
+
+            console.log("Requested current time from YouTube player");
+          } catch (error) {
+            console.error("Failed to request current time:", error);
+            window.removeEventListener("message", timeHandler);
+            timeReject(error);
+            return;
+          }
+
+          // Timeout if no response
+          timeoutId = setTimeout(() => {
+            console.warn("Timeout getting current time, using fallback");
+            window.removeEventListener("message", timeHandler);
+
+            // Fallback: try to seek with estimated position
+            const fallbackPosition = Math.max(
+              0,
+              lastSeekPosition + offsetSeconds
+            );
+            seekToAbsolutePosition(fallbackPosition)
+              .then(timeResolve)
+              .catch(timeReject);
+          }, 1500);
+        });
+      };
+
+      // Step 2: Seek to absolute position
+      const seekToAbsolutePosition = (absolutePosition) => {
+        return new Promise((seekResolve, seekReject) => {
+          console.log(`Seeking to absolute position: ${absolutePosition}`);
+
+          try {
+            // Send seek command to YouTube player
+            iframeRef.current.contentWindow.postMessage(
+              JSON.stringify({
+                event: "command",
+                func: "seekTo",
+                args: [absolutePosition, true], // true for allowSeekAhead
+              }),
+              "*"
+            );
+
+            // Update our tracking
+            setLastSeekPosition(absolutePosition);
 
             // Synchronize across devices
             socket.emit("seek music", {
               roomName,
               videoId,
-              position: seekAmount,
+              position: absolutePosition, // Send absolute position
             });
 
-            // Timeout to handle cases where no response is received
-            const timeoutId = setTimeout(() => {
-              window.removeEventListener("message", messageHandler);
-              seekReject(new Error("Seek operation timed out"));
-            }, 2000);
+            console.log(
+              `Successfully sent seek command to position: ${absolutePosition}`
+            );
+            seekResolve(absolutePosition);
           } catch (error) {
-            console.error("Failed to send seek command:", error);
-            window.removeEventListener("message", messageHandler);
+            console.error("Failed to seek to absolute position:", error);
             seekReject(error);
           }
         });
       };
 
-      // Execute direct seek
-      performDirectSeek()
-        .then((newTime) => {
-          resolve(newTime);
+      // Execute the seek process
+      getCurrentTimeAndSeek()
+        .then((newPosition) => {
+          console.log(
+            `Seek completed successfully to position: ${newPosition}`
+          );
+          resolve(newPosition);
         })
         .catch((error) => {
-          console.warn("Direct seek failed, attempting fallback");
-
-          // Fallback seek method
-          try {
-            iframeRef.current.contentWindow.postMessage(
-              JSON.stringify({
-                event: "command",
-                func: "seekTo",
-                args: [seekAmount],
-              }),
-              "*"
-            );
-
-            socket.emit("seek music", {
-              roomName,
-              videoId,
-              position: seekAmount,
-            });
-
-            resolve(seekAmount);
-          } catch (fallbackError) {
-            console.error("Fallback seek failed:", fallbackError);
-            reject(fallbackError);
-          }
+          console.error("Seek operation failed:", error);
+          reject(error);
         });
     });
   };
 
-  // Forward button handler
+  // Forward button handler - skip 10 seconds ahead
   const skipForward = () => {
-    console.log("Skip Forward button clicked");
-
-    // Safely handle timer
-    try {
-      console.timeEnd("Forward Seek Duration");
-    } catch (e) {
-      // Ignore if timer doesn't exist
-    }
-    console.time("Forward Seek Duration");
+    console.log("Skip Forward button clicked - seeking +10 seconds");
 
     seekVideo(10)
-      .then((time) => {
-        console.log(`Successfully forwarded to ${time} seconds`);
-        console.timeEnd("Forward Seek Duration");
+      .then((newPosition) => {
+        console.log(
+          `Successfully seeked forward to position: ${newPosition} seconds`
+        );
       })
       .catch((error) => {
         console.error("Forward seek failed:", error);
-        console.timeEnd("Forward Seek Duration");
-
-        // Absolute fallback
-        try {
-          if (iframeRef.current) {
-            iframeRef.current.contentWindow.postMessage(
-              JSON.stringify({
-                event: "command",
-                func: "seekTo",
-                args: [10],
-              }),
-              "*"
-            );
-
-            socket.emit("seek music", {
-              roomName,
-              videoId,
-              position: 10,
-            });
-          }
-        } catch (finalError) {
-          console.error("Absolute final forward seek failed", finalError);
-          alert("Unable to seek forward. Please check your connection.");
-        }
+        // Show user-friendly error message
+        console.warn("Unable to seek forward. Please try again.");
       });
   };
 
-  // Backward button handler
+  // Backward button handler - skip 10 seconds back
   const skipBackward = () => {
-    console.log("Skip Backward button clicked");
-
-    // Safely handle timer
-    try {
-      console.timeEnd("Backward Seek Duration");
-    } catch (e) {
-      // Ignore if timer doesn't exist
-    }
-    console.time("Backward Seek Duration");
+    console.log("Skip Backward button clicked - seeking -10 seconds");
 
     seekVideo(-10)
-      .then((time) => {
-        console.log(`Successfully backed to ${time} seconds`);
-        console.timeEnd("Backward Seek Duration");
+      .then((newPosition) => {
+        console.log(
+          `Successfully seeked backward to position: ${newPosition} seconds`
+        );
       })
       .catch((error) => {
         console.error("Backward seek failed:", error);
-        console.timeEnd("Backward Seek Duration");
-
-        // Absolute fallback
-        try {
-          if (iframeRef.current) {
-            iframeRef.current.contentWindow.postMessage(
-              JSON.stringify({
-                event: "command",
-                func: "seekTo",
-                args: [-10],
-              }),
-              "*"
-            );
-
-            socket.emit("seek music", {
-              roomName,
-              videoId,
-              position: -10,
-            });
-          }
-        } catch (finalError) {
-          console.error("Absolute final backward seek failed", finalError);
-          alert("Unable to seek backward. Please check your connection.");
-        }
+        // Show user-friendly error message
+        console.warn("Unable to seek backward. Please try again.");
       });
   };
 
@@ -298,7 +255,12 @@ function YouTubePlayer({ videoId, socket, roomName }) {
     const handleSeekMusic = (data) => {
       if (data.roomName === roomName && data.videoId === videoId) {
         try {
+          console.log(
+            `Received seek event - seeking to absolute position: ${data.position}`
+          );
           sendCommand("seekTo", data.position);
+          // Update our position tracking
+          setLastSeekPosition(data.position);
         } catch (seekError) {
           console.error("Failed to seek in client:", seekError);
         }
