@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import axios from "axios";
 
 // Import components and assets
@@ -16,7 +16,6 @@ function ChatRoom({ room, user, socket, leaveRoom, isPlaying }) {
   const [messages, setMessages] = useState([]);
   const [selectedVideoId, setSelectedVideoId] = useState("");
   const [isMembersPanelOpen, setIsMembersPanelOpen] = useState(false);
-  const [playlistFunctions, setPlaylistFunctions] = useState(null);
   const messagesEndRef = useRef(null);
 
   // Effect to handle current video selection
@@ -135,30 +134,6 @@ function ChatRoom({ room, user, socket, leaveRoom, isPlaying }) {
     });
   };
 
-  // Handle playlist ready - store playlist functions
-  const handlePlaylistReady = useCallback((functions) => {
-    console.log("Playlist ready! Functions received:", functions);
-    setPlaylistFunctions(functions);
-  }, []);
-
-  // Handle video end - play next song from playlist
-  const handleVideoEnd = useCallback(() => {
-    console.log("🎵 Video ended, trying to play next song...", {
-      playlistFunctionsAvailable: !!playlistFunctions,
-      playNextSongAvailable: !!(
-        playlistFunctions && playlistFunctions.playNextSong
-      ),
-      playlistFunctions,
-    });
-
-    if (playlistFunctions && playlistFunctions.playNextSong) {
-      console.log("Calling playNextSong...");
-      playlistFunctions.playNextSong();
-    } else {
-      console.log("❌ No playlist functions available or no next song");
-    }
-  }, [playlistFunctions]);
-
   return (
     <div className="h-full flex flex-col">
       <div className="flex flex-col md:flex-row">
@@ -180,7 +155,6 @@ function ChatRoom({ room, user, socket, leaveRoom, isPlaying }) {
                 videoId={selectedVideoId}
                 socket={socket}
                 roomName={room.name}
-                onVideoEnd={handleVideoEnd}
               />
             </div>
           </div>
@@ -191,8 +165,6 @@ function ChatRoom({ room, user, socket, leaveRoom, isPlaying }) {
               socket={socket}
               roomName={room.name}
               onVideoSelect={handleVideoSelect}
-              onPlaylistReady={handlePlaylistReady}
-              currentVideoId={selectedVideoId}
             />
           </div>
 

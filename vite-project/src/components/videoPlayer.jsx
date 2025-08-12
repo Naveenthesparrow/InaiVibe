@@ -1,7 +1,6 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
   Pause,
-  Play,
   Rewind,
   FastForward,
   SkipBack,
@@ -281,28 +280,17 @@ function YouTubePlayer({ videoId, socket, roomName, onVideoEnd }) {
     };
   }, [socket, roomName, videoId]);
 
-  // Fetch video title and notify of video change
+  // Fetch video title
   useEffect(() => {
     if (videoId) {
       fetch(
         `https://noembed.com/embed?url=https://www.youtube.com/watch?v=${videoId}`
       )
         .then((res) => res.json())
-        .then((data) => {
-          setVideoTitle(data.title || "Unknown Video");
-
-          // Notify other components (like Playlist) about video change
-          if (socket && roomName) {
-            socket.emit("videoChange", {
-              roomName,
-              videoId,
-              title: data.title || "Unknown Video",
-            });
-          }
-        })
+        .then((data) => setVideoTitle(data.title || "Unknown Video"))
         .catch((err) => console.error("Error fetching title:", err));
     }
-  }, [videoId, socket, roomName]);
+  }, [videoId]);
 
   // Debug message handler and video end detection
   useEffect(() => {
@@ -351,8 +339,7 @@ function YouTubePlayer({ videoId, socket, roomName, onVideoEnd }) {
     return () => {
       window.removeEventListener("message", debugMessageHandler);
     };
-  }, [onVideoEnd]);
-  return (
+  }, [onVideoEnd]);  return (
     <div className="flex flex-col items-center gap-2 sm:gap-4 p-2 sm:p-4 w-full relative">
       <div className="w-[350px] md:w-[600px] lg:w-[700px] flex flex-col relative">
         <div className="w-full h-[250px] md:h-[350px] lg:h-[400px] rounded-2xl overflow-hidden relative">
@@ -420,7 +407,7 @@ function YouTubePlayer({ videoId, socket, roomName, onVideoEnd }) {
               {isPlaying ? (
                 <Pause className="w-4 h-4 sm:w-5 sm:h-5" />
               ) : (
-                <Play className="w-4 h-4 sm:w-5 sm:h-5" />
+                <Pause className="w-4 h-4 sm:w-5 sm:h-5" />
               )}
             </button>
 
