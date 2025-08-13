@@ -1,6 +1,7 @@
 import React, { useEffect, useRef, useState } from "react";
 import {
   Pause,
+  Play,
   Rewind,
   FastForward,
   SkipBack,
@@ -13,6 +14,8 @@ function YouTubePlayer({ videoId, socket, roomName, onVideoEnd }) {
   const iframeRef = useRef(null);
   const playerReadyRef = useRef(false);
   const [lastSeekPosition, setLastSeekPosition] = useState(0);
+  const [videoDuration, setVideoDuration] = useState(0);
+  const videoEndCheckRef = useRef(null);
 
   // Helper function to send commands to YouTube iframe
   const sendCommand = (command, args = "") => {
@@ -182,6 +185,51 @@ function YouTubePlayer({ videoId, socket, roomName, onVideoEnd }) {
     });
   };
 
+  // Backup video end detection using timer
+  const startVideoEndDetection = () => {
+    console.log("🕐 Starting backup video end detection timer");
+
+    // Clear any existing timer
+    if (videoEndCheckRef.current) {
+      clearInterval(videoEndCheckRef.current);
+    }
+
+    videoEndCheckRef.current = setInterval(() => {
+      if (iframeRef.current) {
+        // Request current time and duration
+        try {
+          iframeRef.current.contentWindow.postMessage(
+            JSON.stringify({
+              event: "command",
+              func: "getCurrentTime",
+              args: [],
+            }),
+            "*"
+          );
+
+          iframeRef.current.contentWindow.postMessage(
+            JSON.stringify({
+              event: "command",
+              func: "getDuration",
+              args: [],
+            }),
+            "*"
+          );
+        } catch (error) {
+          console.error("Error requesting video status:", error);
+        }
+      }
+    }, 2000); // Check every 2 seconds
+  };
+
+  // Stop video end detection timer
+  const stopVideoEndDetection = () => {
+    if (videoEndCheckRef.current) {
+      clearInterval(videoEndCheckRef.current);
+      videoEndCheckRef.current = null;
+    }
+  };
+
   // Forward button handler - skip 10 seconds ahead
   const skipForward = () => {
     console.log("Skip Forward button clicked - seeking +10 seconds");
@@ -280,17 +328,28 @@ function YouTubePlayer({ videoId, socket, roomName, onVideoEnd }) {
     };
   }, [socket, roomName, videoId]);
 
-  // Fetch video title
+  // Fetch video title and notify of video change
   useEffect(() => {
     if (videoId) {
       fetch(
         `https://noembed.com/embed?url=https://www.youtube.com/watch?v=${videoId}`
       )
         .then((res) => res.json())
-        .then((data) => setVideoTitle(data.title || "Unknown Video"))
+        .then((data) => {
+          setVideoTitle(data.title || "Unknown Video");
+
+          // Notify other components (like Playlist) about video change
+          if (socket && roomName) {
+            socket.emit("videoChange", {
+              roomName,
+              videoId,
+              title: data.title || "Unknown Video",
+            });
+          }
+        })
         .catch((err) => console.error("Error fetching title:", err));
     }
-  }, [videoId]);
+  }, [videoId, socket, roomName]);
 
   // Debug message handler and video end detection
   useEffect(() => {
@@ -306,12 +365,45 @@ function YouTubePlayer({ videoId, socket, roomName, onVideoEnd }) {
           fullInfo: data.info,
         });
 
-        // Check for video end event
-        if (data.event === "onStateChange" && data.info === 0) {
-          // YouTube player state 0 means ended
-          console.log("🏁 Video ended, triggering next song");
-          if (onVideoEnd) {
-            onVideoEnd();
+        // Check for video end event - multiple ways to catch it
+        if (data.event === "onStateChange") {
+          console.log(
+            "🔍 YouTube State Change:",
+            data.info,
+            "State meanings: -1=unstarted, 0=ended, 1=playing, 2=paused, 3=buffering, 5=cued"
+          );
+
+          if (data.info === 0) {
+            // YouTube player state 0 means ended
+            console.log("🏁 Video ended, triggering next song");
+            console.log("🏁 onVideoEnd callback available:", !!onVideoEnd);
+            if (onVideoEnd) {
+              console.log("🏁 Calling onVideoEnd callback...");
+              onVideoEnd();
+            } else {
+              console.log("❌ No onVideoEnd callback provided");
+            }
+          }
+        }
+
+        // Also check for video end in different event format
+        if (
+          data.event === "video-progress" &&
+          data.info &&
+          data.info.currentTime &&
+          data.info.duration
+        ) {
+          const { currentTime, duration } = data.info;
+          // If we're within 1 second of the end, consider it ended
+          if (duration - currentTime <= 1 && currentTime > 0) {
+            console.log("🏁 Video near end detected via progress:", {
+              currentTime,
+              duration,
+            });
+            if (onVideoEnd) {
+              console.log("🏁 Calling onVideoEnd via progress detection...");
+              onVideoEnd();
+            }
           }
         }
 
@@ -339,7 +431,8 @@ function YouTubePlayer({ videoId, socket, roomName, onVideoEnd }) {
     return () => {
       window.removeEventListener("message", debugMessageHandler);
     };
-  }, [onVideoEnd]);  return (
+  }, [onVideoEnd]);
+  return (
     <div className="flex flex-col items-center gap-2 sm:gap-4 p-2 sm:p-4 w-full relative">
       <div className="w-[350px] md:w-[600px] lg:w-[700px] flex flex-col relative">
         <div className="w-full h-[250px] md:h-[350px] lg:h-[400px] rounded-2xl overflow-hidden relative">
@@ -348,7 +441,7 @@ function YouTubePlayer({ videoId, socket, roomName, onVideoEnd }) {
             id="youtube-player"
             width="100%"
             height="100%"
-            src={`https://www.youtube.com/embed/${videoId}?enablejsapi=1&controls=0&rel=0&modestbranding=1&autoplay=1&mute=0`}
+            src={`https://www.youtube.com/embed/${videoId}?enablejsapi=1&controls=0&rel=0&modestbranding=1&autoplay=1&mute=0&origin=${window.location.origin}&widget_referrer=${window.location.href}`}
             title="YouTube video player"
             frameBorder="0"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
@@ -363,6 +456,9 @@ function YouTubePlayer({ videoId, socket, roomName, onVideoEnd }) {
                 try {
                   sendCommand("playVideo");
                   console.log("Sent initial playVideo command");
+
+                  // Start video end detection backup timer
+                  startVideoEndDetection();
                 } catch (error) {
                   console.error(
                     "Failed to send initial playVideo command",
@@ -407,7 +503,7 @@ function YouTubePlayer({ videoId, socket, roomName, onVideoEnd }) {
               {isPlaying ? (
                 <Pause className="w-4 h-4 sm:w-5 sm:h-5" />
               ) : (
-                <Pause className="w-4 h-4 sm:w-5 sm:h-5" />
+                <Play className="w-4 h-4 sm:w-5 sm:h-5" />
               )}
             </button>
 
