@@ -4,8 +4,6 @@ import Playlist from "../models/Playlist.js";
 
 export const setupSocketHandlers = (io) => {
   io.on("connection", (socket) => {
-    console.log("User connected:", socket.id);
-
     // Join a room
     socket.on("join room", async ({ roomName, userName }) => {
       try {
@@ -19,9 +17,6 @@ export const setupSocketHandlers = (io) => {
           room.members.push(userName);
           await room.save();
 
-          console.log("New member added:", userName);
-          console.log("Updated members:", room.members);
-
           // Notify all users in the room about the new member
           io.to(roomName).emit("member joined", {
             userName,
@@ -30,8 +25,6 @@ export const setupSocketHandlers = (io) => {
         }
 
         socket.join(roomName);
-        console.log("User name:", userName);
-        console.log(`User joined room: ${roomName}`);
 
         // Send current video to new user when they join
         try {
@@ -70,8 +63,6 @@ export const setupSocketHandlers = (io) => {
         await room.save();
 
         socket.leave(roomName);
-        console.log(`User ${userName} left room: ${roomName}`);
-        console.log("Updated members:", room.members);
 
         // Notify remaining users about the member leaving
         io.to(roomName).emit("member left", {
@@ -291,8 +282,6 @@ export const setupSocketHandlers = (io) => {
     // Set current video - Fixed this function to account for roomId requirement
     socket.on("set current video", async ({ roomName, videoId }) => {
       try {
-        console.log(`Setting video ${videoId} for room ${roomName}`);
-
         // First find the room to get its ID
         const room = await Room.findOne({ name: roomName });
         if (!room) {
@@ -332,10 +321,6 @@ export const setupSocketHandlers = (io) => {
           timestamp: new Date(),
         });
 
-        console.log(
-          `Emitted current_video_changed to room ${roomName} with video ${videoId}`
-        );
-
         // Add a system message to indicate video change
         const message = await Message.create({
           room: roomName,
@@ -346,6 +331,61 @@ export const setupSocketHandlers = (io) => {
         io.to(roomName).emit("chat message", message);
       } catch (error) {
         console.error("Error setting current video:", error);
+      }
+    });
+
+    // Handle video change from playlist - new handler for auto-play next song
+    socket.on("videoChange", async ({ roomName, videoId, title }) => {
+      try {
+        // First find the room to get its ID
+        const room = await Room.findOne({ name: roomName });
+        if (!room) {
+          console.error(`Room not found: ${roomName}`);
+          return;
+        }
+
+        // Find or create playlist for the room
+        let playlist = await Playlist.findOne({
+          $or: [{ room: roomName }, { roomId: room._id }],
+        });
+
+        if (!playlist) {
+          // Create a new playlist with both room name and roomId
+          playlist = new Playlist({
+            room: roomName,
+            roomId: room._id,
+            songs: [],
+            currentVideoId: videoId,
+          });
+        } else {
+          // Update the existing playlist
+          playlist.currentVideoId = videoId;
+
+          // Ensure roomId is set if it wasn't before
+          if (!playlist.roomId) {
+            playlist.roomId = room._id;
+          }
+        }
+
+        await playlist.save();
+
+        // Broadcast to OTHER clients in the room (not the sender)
+        socket.broadcast.to(roomName).emit("current video changed", {
+          videoId,
+          roomName,
+          timestamp: new Date(),
+        });
+
+        // Add a system message to indicate video change
+        const message = await Message.create({
+          room: roomName,
+          user: "System",
+          text: `🎵 Playing: ${title}`,
+        });
+
+        io.to(roomName).emit("chat message", message);
+      } catch (error) {
+        console.error("Error handling video change:", error);
       }
     });
 
@@ -454,14 +494,6 @@ export const setupSocketHandlers = (io) => {
     // Enhanced seek music handler with comprehensive logging
     socket.on("seek music", async ({ roomName, videoId, position }) => {
       try {
-        console.log("🎯 Seek Music Event Received:", {
-          roomName,
-          videoId,
-          position,
-          timestamp: Date.now(),
-          socketId: socket.id,
-        });
-
         // Validate parameters with more strict checks
         if (!roomName || typeof roomName !== "string") {
           console.error("❌ Invalid room name:", roomName);
@@ -492,8 +524,6 @@ export const setupSocketHandlers = (io) => {
 
         // Broadcast to all clients in the room
         io.to(roomName).emit("seek music", seekEvent);
-
-        console.log("✅ Seek Music Event Broadcasted:", seekEvent);
 
         // Optional: Create a system message for tracking
         try {
@@ -549,8 +579,6 @@ export const setupSocketHandlers = (io) => {
     // Add song to playlist
     socket.on("add to playlist", async ({ roomName, song }) => {
       try {
-        console.log("🎵 Adding song to playlist:", song.title);
-
         // Broadcast to other clients in the room (excluding sender)
         socket.broadcast.to(roomName).emit("add to playlist", {
           roomName,
@@ -590,8 +618,6 @@ export const setupSocketHandlers = (io) => {
     // Remove song from playlist
     socket.on("remove from playlist", async ({ roomName, songId }) => {
       try {
-        console.log("🗑️ Removing song from playlist:", songId);
-
         // Broadcast to other clients in the room (excluding sender)
         socket.broadcast.to(roomName).emit("remove from playlist", {
           roomName,
@@ -605,8 +631,6 @@ export const setupSocketHandlers = (io) => {
     // Reorder playlist
     socket.on("reorder playlist", async ({ roomName, playlist }) => {
       try {
-        console.log("🔄 Reordering playlist for room:", roomName);
-
         // Broadcast to other clients in the room (excluding sender)
         socket.broadcast.to(roomName).emit("reorder playlist", {
           roomName,
@@ -619,7 +643,7 @@ export const setupSocketHandlers = (io) => {
 
     // Disconnect
     socket.on("disconnect", () => {
-      console.log("User disconnected:", socket.id);
+      // User disconnected - no logging needed
     });
   });
 };

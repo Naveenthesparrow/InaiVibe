@@ -40,31 +40,13 @@ function Playlist({
 
   // Play next song in playlist
   const playNextSong = useCallback(() => {
-    console.log("🎵 playNextSong called!", {
-      currentPlayingId,
-      playlistLength: playlist.length,
-      playlist: playlist.map((song) => ({
-        title: song.title,
-        videoId: song.videoId,
-      })),
-    });
-
-    // Debug: check if currentPlayingId matches any song
-    const matchingSongs = playlist.filter(
-      (song) => song.videoId === currentPlayingId
-    );
-    console.log("🔍 Matching songs for currentPlayingId:", matchingSongs);
-
     const currentIndex = playlist.findIndex(
       (song) => song.videoId === currentPlayingId
     );
     const nextIndex = currentIndex + 1;
 
-    console.log("📍 Current index:", currentIndex, "Next index:", nextIndex);
-
     if (nextIndex < playlist.length) {
       const nextSong = playlist[nextIndex];
-      console.log("▶️ Playing next song:", nextSong.title);
       setCurrentPlayingId(nextSong.videoId);
       onVideoSelect(nextSong.videoId);
 
@@ -77,12 +59,6 @@ function Playlist({
         });
       }
     } else {
-      console.log(
-        "❌ No more songs in playlist, current index:",
-        currentIndex,
-        "playlist length:",
-        playlist.length
-      );
       setCurrentPlayingId("");
     }
   }, [playlist, currentPlayingId, onVideoSelect, socket, roomName]);
@@ -100,10 +76,6 @@ function Playlist({
   // Sync currentPlayingId with external currentVideoId
   useEffect(() => {
     if (currentVideoId && currentVideoId !== currentPlayingId) {
-      console.log(
-        "Syncing currentPlayingId from external source:",
-        currentVideoId
-      );
       setCurrentPlayingId(currentVideoId);
     }
   }, [currentVideoId, currentPlayingId]);
@@ -111,7 +83,6 @@ function Playlist({
   // Expose stable playNextSong function to parent component (only once)
   useEffect(() => {
     if (onPlaylistReady) {
-      console.log("Exposing stable playNextSong function to parent");
       onPlaylistReady({ playNextSong: stablePlayNextSong });
     }
   }, [onPlaylistReady]);
@@ -171,7 +142,6 @@ function Playlist({
       (existingSong) => existingSong.videoId === song.videoId
     );
     if (songExists) {
-      console.log("Song already exists in playlist:", song.title);
       return;
     }
 
@@ -191,15 +161,6 @@ function Playlist({
     const hasNoCurrentSong = !currentPlayingId;
     const shouldAutoPlay = isFirstSong || hasNoCurrentSong;
 
-    console.log("Adding to playlist:", {
-      songTitle: song.title,
-      isFirstSong,
-      hasNoCurrentSong,
-      shouldAutoPlay,
-      currentPlaylistLength: playlist.length,
-      currentPlayingId,
-    });
-
     const updatedPlaylist = [...playlist, newSong];
     setPlaylist(updatedPlaylist);
 
@@ -213,14 +174,6 @@ function Playlist({
 
     // Auto-play logic - only for locally added songs
     if (shouldAutoPlay && onVideoSelect) {
-      console.log("AUTO-PLAYING:", newSong.title, {
-        shouldAutoPlay,
-        isFirstSong,
-        hasNoCurrentSong,
-        currentPlayingId,
-        onVideoSelectExists: !!onVideoSelect,
-      });
-
       setCurrentPlayingId(newSong.videoId);
 
       // Use immediate execution for auto-play
@@ -235,19 +188,8 @@ function Playlist({
         });
       }
     } else {
-      console.log("AUTO-PLAY SKIPPED:", {
-        shouldAutoPlay,
-        isFirstSong,
-        hasNoCurrentSong,
-        currentPlayingId,
-        onVideoSelectExists: !!onVideoSelect,
-        reason: !shouldAutoPlay
-          ? "shouldAutoPlay is false"
-          : "onVideoSelect not available",
-      });
+      // Auto-play skipped
     }
-
-    console.log("Added to playlist:", song.title);
   };
 
   // Remove song from playlist
@@ -319,16 +261,11 @@ function Playlist({
 
     const handlePlaylistAdd = (data) => {
       if (data.roomName === roomName) {
-        console.log(
-          "Received playlist add from socket (other user):",
-          data.song.title
-        );
         const updatedPlaylist = [...playlist, data.song];
         setPlaylist(updatedPlaylist);
 
         // Auto-play if no current song and this is the first song
         if (!currentPlayingId && updatedPlaylist.length === 1) {
-          console.log("Auto-playing from socket event:", data.song.title);
           setCurrentPlayingId(data.song.videoId);
           onVideoSelect(data.song.videoId);
         }

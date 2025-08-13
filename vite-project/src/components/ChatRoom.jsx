@@ -53,7 +53,6 @@ function ChatRoom({ room, user, socket, leaveRoom, isPlaying }) {
     });
 
     socket.on("current video changed", ({ videoId }) => {
-      console.log("Video changed to:", videoId, "in room:", room.name);
       setSelectedVideoId(videoId);
     });
 
@@ -125,7 +124,6 @@ function ChatRoom({ room, user, socket, leaveRoom, isPlaying }) {
     const videoId =
       typeof videoData === "string" ? videoData : videoData.videoId;
 
-    console.log("Video selected:", videoId);
     setSelectedVideoId(videoId);
 
     // Emit socket event to sync video across users
@@ -137,25 +135,13 @@ function ChatRoom({ room, user, socket, leaveRoom, isPlaying }) {
 
   // Handle playlist ready - store playlist functions
   const handlePlaylistReady = useCallback((functions) => {
-    console.log("Playlist ready! Functions received:", functions);
     setPlaylistFunctions(functions);
   }, []);
 
   // Handle video end - play next song from playlist
   const handleVideoEnd = useCallback(() => {
-    console.log("🎵 Video ended, trying to play next song...", {
-      playlistFunctionsAvailable: !!playlistFunctions,
-      playNextSongAvailable: !!(
-        playlistFunctions && playlistFunctions.playNextSong
-      ),
-      playlistFunctions,
-    });
-
     if (playlistFunctions && playlistFunctions.playNextSong) {
-      console.log("Calling playNextSong...");
       playlistFunctions.playNextSong();
-    } else {
-      console.log("❌ No playlist functions available or no next song");
     }
   }, [playlistFunctions]);
 

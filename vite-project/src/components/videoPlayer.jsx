@@ -19,7 +19,6 @@ function YouTubePlayer({ videoId, socket, roomName, onVideoEnd }) {
 
   // Helper function to send commands to YouTube iframe
   const sendCommand = (command, args = "") => {
-    console.log(`Sending command: ${command}, Args: ${args}`);
     if (iframeRef.current) {
       iframeRef.current.contentWindow.postMessage(
         JSON.stringify({
@@ -35,10 +34,6 @@ function YouTubePlayer({ videoId, socket, roomName, onVideoEnd }) {
   // Fixed seek function - gets current time first, then seeks to absolute position
   const seekVideo = (offsetSeconds) => {
     return new Promise((resolve, reject) => {
-      console.log(
-        `Attempting to seek ${offsetSeconds} seconds relative to current position`
-      );
-
       if (!iframeRef.current) {
         console.error("Iframe ref is not available");
         reject(new Error("Iframe not ready"));
@@ -62,7 +57,6 @@ function YouTubePlayer({ videoId, socket, roomName, onVideoEnd }) {
                 typeof data.info.currentTime === "number"
               ) {
                 currentTime = data.info.currentTime;
-                console.log(`Current time retrieved: ${currentTime} seconds`);
 
                 // Remove listener and clear timeout
                 window.removeEventListener("message", timeHandler);
@@ -70,9 +64,6 @@ function YouTubePlayer({ videoId, socket, roomName, onVideoEnd }) {
 
                 // Calculate new absolute position
                 const newPosition = Math.max(0, currentTime + offsetSeconds);
-                console.log(
-                  `Seeking to absolute position: ${newPosition} seconds`
-                );
 
                 // Step 2: Seek to the calculated absolute position
                 seekToAbsolutePosition(newPosition)
@@ -107,8 +98,6 @@ function YouTubePlayer({ videoId, socket, roomName, onVideoEnd }) {
               }),
               "*"
             );
-
-            console.log("Requested current time from YouTube player");
           } catch (error) {
             console.error("Failed to request current time:", error);
             window.removeEventListener("message", timeHandler);
@@ -118,7 +107,6 @@ function YouTubePlayer({ videoId, socket, roomName, onVideoEnd }) {
 
           // Timeout if no response
           timeoutId = setTimeout(() => {
-            console.warn("Timeout getting current time, using fallback");
             window.removeEventListener("message", timeHandler);
 
             // Fallback: try to seek with estimated position
@@ -136,8 +124,6 @@ function YouTubePlayer({ videoId, socket, roomName, onVideoEnd }) {
       // Step 2: Seek to absolute position
       const seekToAbsolutePosition = (absolutePosition) => {
         return new Promise((seekResolve, seekReject) => {
-          console.log(`Seeking to absolute position: ${absolutePosition}`);
-
           try {
             // Send seek command to YouTube player
             iframeRef.current.contentWindow.postMessage(
@@ -159,9 +145,6 @@ function YouTubePlayer({ videoId, socket, roomName, onVideoEnd }) {
               position: absolutePosition, // Send absolute position
             });
 
-            console.log(
-              `Successfully sent seek command to position: ${absolutePosition}`
-            );
             seekResolve(absolutePosition);
           } catch (error) {
             console.error("Failed to seek to absolute position:", error);
@@ -173,9 +156,6 @@ function YouTubePlayer({ videoId, socket, roomName, onVideoEnd }) {
       // Execute the seek process
       getCurrentTimeAndSeek()
         .then((newPosition) => {
-          console.log(
-            `Seek completed successfully to position: ${newPosition}`
-          );
           resolve(newPosition);
         })
         .catch((error) => {
@@ -187,8 +167,6 @@ function YouTubePlayer({ videoId, socket, roomName, onVideoEnd }) {
 
   // Backup video end detection using timer
   const startVideoEndDetection = () => {
-    console.log("🕐 Starting backup video end detection timer");
-
     // Clear any existing timer
     if (videoEndCheckRef.current) {
       clearInterval(videoEndCheckRef.current);
@@ -215,11 +193,21 @@ function YouTubePlayer({ videoId, socket, roomName, onVideoEnd }) {
             }),
             "*"
           );
+
+          // Also request player state
+          iframeRef.current.contentWindow.postMessage(
+            JSON.stringify({
+              event: "command",
+              func: "getPlayerState",
+              args: [],
+            }),
+            "*"
+          );
         } catch (error) {
           console.error("Error requesting video status:", error);
         }
       }
-    }, 2000); // Check every 2 seconds
+    }, 1000); // Check every 1 second (more frequent)
   };
 
   // Stop video end detection timer
@@ -230,37 +218,28 @@ function YouTubePlayer({ videoId, socket, roomName, onVideoEnd }) {
     }
   };
 
+  // Cleanup on component unmount or video change
+  useEffect(() => {
+    return () => {
+      stopVideoEndDetection();
+    };
+  }, [videoId]); // Restart detection when video changes
+
   // Forward button handler - skip 10 seconds ahead
   const skipForward = () => {
-    console.log("Skip Forward button clicked - seeking +10 seconds");
-
     seekVideo(10)
-      .then((newPosition) => {
-        console.log(
-          `Successfully seeked forward to position: ${newPosition} seconds`
-        );
-      })
+      .then((newPosition) => {})
       .catch((error) => {
         console.error("Forward seek failed:", error);
-        // Show user-friendly error message
-        console.warn("Unable to seek forward. Please try again.");
       });
   };
 
   // Backward button handler - skip 10 seconds back
   const skipBackward = () => {
-    console.log("Skip Backward button clicked - seeking -10 seconds");
-
     seekVideo(-10)
-      .then((newPosition) => {
-        console.log(
-          `Successfully seeked backward to position: ${newPosition} seconds`
-        );
-      })
+      .then((newPosition) => {})
       .catch((error) => {
         console.error("Backward seek failed:", error);
-        // Show user-friendly error message
-        console.warn("Unable to seek backward. Please try again.");
       });
   };
 
@@ -303,9 +282,6 @@ function YouTubePlayer({ videoId, socket, roomName, onVideoEnd }) {
     const handleSeekMusic = (data) => {
       if (data.roomName === roomName && data.videoId === videoId) {
         try {
-          console.log(
-            `Received seek event - seeking to absolute position: ${data.position}`
-          );
           sendCommand("seekTo", data.position);
           // Update our position tracking
           setLastSeekPosition(data.position);
@@ -357,35 +333,6 @@ function YouTubePlayer({ videoId, socket, roomName, onVideoEnd }) {
       try {
         const data = JSON.parse(event.data);
 
-        console.log("🔍 YouTube Iframe Full Debug:", {
-          rawEvent: event.data,
-          parsedData: data,
-          eventType: data.event,
-          currentTime: data.info?.currentTime,
-          fullInfo: data.info,
-        });
-
-        // Check for video end event - multiple ways to catch it
-        if (data.event === "onStateChange") {
-          console.log(
-            "🔍 YouTube State Change:",
-            data.info,
-            "State meanings: -1=unstarted, 0=ended, 1=playing, 2=paused, 3=buffering, 5=cued"
-          );
-
-          if (data.info === 0) {
-            // YouTube player state 0 means ended
-            console.log("🏁 Video ended, triggering next song");
-            console.log("🏁 onVideoEnd callback available:", !!onVideoEnd);
-            if (onVideoEnd) {
-              console.log("🏁 Calling onVideoEnd callback...");
-              onVideoEnd();
-            } else {
-              console.log("❌ No onVideoEnd callback provided");
-            }
-          }
-        }
-
         // Also check for video end in different event format
         if (
           data.event === "video-progress" &&
@@ -396,31 +343,54 @@ function YouTubePlayer({ videoId, socket, roomName, onVideoEnd }) {
           const { currentTime, duration } = data.info;
           // If we're within 1 second of the end, consider it ended
           if (duration - currentTime <= 1 && currentTime > 0) {
-            console.log("🏁 Video near end detected via progress:", {
-              currentTime,
-              duration,
-            });
             if (onVideoEnd) {
-              console.log("🏁 Calling onVideoEnd via progress detection...");
               onVideoEnd();
             }
           }
         }
 
-        // Additional specific logging for different event types
-        if (data.event === "infoDelivery") {
-          console.group("YouTube Info Delivery");
-          console.log("Current Time:", data.info?.currentTime);
-          console.log("Duration:", data.info?.duration);
-          console.log("Playback Rate:", data.info?.playbackRate);
-          console.log("Volume:", data.info?.volume);
-          console.groupEnd();
+        // Check for command responses (getCurrentTime, getDuration, getPlayerState)
+        if (data.event === "command") {
+          if (data.func === "getCurrentTime" && typeof data.info === "number") {
+            // Current time received
+          }
+          if (data.func === "getDuration" && typeof data.info === "number") {
+            setVideoDuration(data.info);
+          }
+          if (data.func === "getPlayerState" && typeof data.info === "number") {
+            if (data.info === 0) {
+              if (onVideoEnd) {
+                onVideoEnd();
+              }
+            }
+          }
+        }
+
+        // Check for infoDelivery responses
+        if (data.event === "infoDelivery" && data.info) {
+          const { currentTime, duration, playerState } = data.info;
+
+          // Check if player state indicates ended
+          if (playerState === 0) {
+            if (onVideoEnd) {
+              onVideoEnd();
+            }
+          }
+
+          // Also check if we're near the end based on time
+          if (
+            duration &&
+            currentTime &&
+            duration - currentTime <= 1 &&
+            currentTime > 0
+          ) {
+            if (onVideoEnd) {
+              onVideoEnd();
+            }
+          }
         }
       } catch (error) {
-        console.log("🚨 Unprocessable message:", {
-          originalData: event.data,
-          error: error.message,
-        });
+        // Unprocessable message - silently ignore
       }
     };
 
@@ -441,29 +411,33 @@ function YouTubePlayer({ videoId, socket, roomName, onVideoEnd }) {
             id="youtube-player"
             width="100%"
             height="100%"
-            src={`https://www.youtube.com/embed/${videoId}?enablejsapi=1&controls=0&rel=0&modestbranding=1&autoplay=1&mute=0&origin=${window.location.origin}&widget_referrer=${window.location.href}`}
+            src={`https://www.youtube.com/embed/${videoId}?enablejsapi=1&controls=0&rel=0&modestbranding=1&autoplay=1&mute=0&origin=${window.location.origin}&widget_referrer=${window.location.href}&iv_load_policy=3&disablekb=1&fs=1`}
             title="YouTube video player"
             frameBorder="0"
             allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
             allowFullScreen
             className="rounded-2xl"
             onLoad={() => {
-              console.log("YouTube iframe loaded");
               playerReadyRef.current = true;
 
               // Send initial command to verify API is working
               setTimeout(() => {
                 try {
+                  // First enable state change events
+                  iframeRef.current.contentWindow.postMessage(
+                    JSON.stringify({
+                      event: "listening",
+                      id: "youtube-player",
+                    }),
+                    "*"
+                  );
+
                   sendCommand("playVideo");
-                  console.log("Sent initial playVideo command");
 
                   // Start video end detection backup timer
                   startVideoEndDetection();
                 } catch (error) {
-                  console.error(
-                    "Failed to send initial playVideo command",
-                    error
-                  );
+                  console.error("Failed to send initial commands", error);
                 }
               }, 1000);
             }}
